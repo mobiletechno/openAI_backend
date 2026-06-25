@@ -388,6 +388,10 @@ async def process_chunk(raw_bytes: bytes, session: Session) -> list[dict]:
         None, any_audio_to_wav_bytes, raw_bytes, fmt
     )
 
+    if len(wav_bytes) < 4000:
+        log.warning(f"⚠️ [{session.session_id}] Audio chunk too short ({len(wav_bytes)} bytes). Skipping Whisper.")
+        return []
+
     # ── Step 3: Transcribe with Whisper (async API call) ──────────────────────
     audio_io      = io.BytesIO(wav_bytes)
     audio_io.name = "audio.wav"
