@@ -128,6 +128,12 @@ async def startup_event():
                 "pyannote/speaker-diarization-3.1",
                 use_auth_token=HUGGINGFACE_TOKEN,
             )
+            if diarize_pipeline is None:
+                raise ValueError(
+                    "Pipeline returned None. Please verify your HUGGINGFACE_TOKEN is correct and "
+                    "that you accepted terms for both 'pyannote/speaker-diarization-3.1' and "
+                    "'pyannote/segmentation-3.0' on Hugging Face."
+                )
             device = "cuda" if torch.cuda.is_available() else "cpu"
             diarize_pipeline.to(torch.device(device))
             log.info(f"✅ pyannote loaded on {device.upper()}")
