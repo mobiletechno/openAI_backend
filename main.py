@@ -91,6 +91,14 @@ logging.basicConfig(
 )
 log = logging.getLogger("salesiq")
 
+def get_val(obj, key, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 # ── FastAPI ───────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="SalesIQ Backend API",
@@ -392,12 +400,18 @@ async def process_chunk(raw_bytes: bytes, session: Session) -> list[dict]:
         timestamp_granularities=["segment"],
     )
 
-    full_text     = (whisper_resp.text or "").strip()
-    whisper_segs  = [
-        {"text": s.text.strip(), "start": s.start, "end": s.end}
-        for s in (whisper_resp.segments or [])
-        if s.text.strip()
-    ]
+    whisper_text = get_val(whisper_resp, "text")
+    full_text = (whisper_text or "").strip()
+    raw_segs = get_val(whisper_resp, "segments") or []
+    whisper_segs = []
+    for s in raw_segs:
+        s_text = get_val(s, "text")
+        if s_text and s_text.strip():
+            whisper_segs.append({
+                "text": s_text.strip(),
+                "start": get_val(s, "start", 0.0),
+                "end": get_val(s, "end", 0.0)
+            })
 
     if not full_text:
         return []   # silence chunk
@@ -670,15 +684,25 @@ async def transcribe(
             model="whisper-1", file=audio_io, language=language,
             response_format="verbose_json", timestamp_granularities=["segment"],
         )
+        resp_text = get_val(resp, "text")
+        raw_segs = get_val(resp, "segments") or []
+        segments = []
+        for s in raw_segs:
+            s_text = get_val(s, "text")
+            if s_text and s_text.strip():
+                segments.append({
+                    "text": s_text.strip(),
+                    "start": round(get_val(s, "start", 0.0), 2),
+                    "end": round(get_val(s, "end", 0.0), 2)
+                })
+        duration = get_val(resp, "duration")
+        lang = get_val(resp, "language")
         return JSONResponse({
-            "transcript":      resp.text,
-            "language":        resp.language,
-            "duration":        round(resp.duration, 2) if hasattr(resp, "duration") else None,
+            "transcript":      resp_text,
+            "language":        lang,
+            "duration":        round(duration, 2) if duration else None,
             "detected_format": fmt,
-            "segments": [
-                {"text": s.text.strip(), "start": round(s.start, 2), "end": round(s.end, 2)}
-                for s in (resp.segments or [])
-            ],
+            "segments":        segments,
         })
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -708,15 +732,22 @@ async def diarize(
             model="whisper-1", file=audio_io, language=language,
             response_format="verbose_json", timestamp_granularities=["segment"],
         )
-        whisper_segs = [
-            {"text": s.text.strip(), "start": s.start, "end": s.end}
-            for s in (resp.segments or []) if s.text.strip()
-        ]
+        raw_segs = get_val(resp, "segments") or []
+        whisper_segs = []
+        for s in raw_segs:
+            s_text = get_val(s, "text")
+            if s_text and s_text.strip():
+                whisper_segs.append({
+                    "text": s_text.strip(),
+                    "start": get_val(s, "start", 0.0),
+                    "end": get_val(s, "end", 0.0)
+                })
         diarize_segs: list[dict] = []
         if diarize_pipeline:
             wav_path     = await loop.run_in_executor(None, _write_wav_temp, wav)
             diarize_segs = await loop.run_in_executor(None, run_diarization, wav_path)
-        merged = merge_segments(whisper_segs, diarize_segs, session, resp.text)
+        resp_text = get_val(resp, "text")
+        merged = merge_segments(whisper_segs, diarize_segs, session, resp_text)
         return JSONResponse({
             "speakers_detected": len(session.speaker_map),
             "speaker_map":       session.speaker_map,
