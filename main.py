@@ -67,6 +67,7 @@ import torch
 import torchaudio
 import soundfile as sf
 from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydub import AudioSegment
@@ -111,6 +112,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Create static directory if it doesn't exist
+os.makedirs("static", exist_ok=True)
+
+# Mount static directory to serve files at /static
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ── Global model instances ────────────────────────────────────────────────────
 sync_openai:      Optional[OpenAI]      = None
